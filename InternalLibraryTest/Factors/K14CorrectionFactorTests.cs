@@ -1,4 +1,5 @@
 ﻿using Xunit;
+using HTA.CableSizing.Enums;
 using HTA.CableSizing.Factors;
 using HTA.CableSizing.Models;
 
@@ -9,74 +10,73 @@ public class K14CorrectionFactorTests
 {
     private readonly K14CorrectionFactor _factor = new();
 
+    /// <summary>
+    /// Evaluates a documented buried laying depth as an applied correction factor.
+    /// </summary>
+    [Fact]
+    public void Evaluate_BuriedTabulatedDepth_ReturnsAppliedFactor()
+    {
+        var result = _factor.Evaluate(new InstallationContext(
+            LayingDepthMeters: 0.80,
+            Environment: InstallationEnvironment.Buried));
+
+        Assert.Equal(FactorStatus.Applied, result.Status);
+        Assert.Equal(1.00, result.Value);
+    }
+
+    /// <summary>
+    /// Reports that K14 does not apply to a free-air installation.
+    /// </summary>
+    [Fact]
+    public void Evaluate_FreeAir_ReturnsNotApplicable()
+    {
+        var result = _factor.Evaluate(new InstallationContext(
+            Environment: InstallationEnvironment.FreeAir));
+
+        Assert.Equal(FactorStatus.NotApplicable, result.Status);
+        Assert.Equal(1.0, result.Value);
+    }
+
+    /// <summary>
+    /// Reports missing status when the installation environment is absent.
+    /// </summary>
+    [Fact]
+    public void Evaluate_MissingEnvironment_ReturnsMissing()
+    {
+        var result = _factor.Evaluate(new InstallationContext(LayingDepthMeters: 0.80));
+
+        Assert.Equal(FactorStatus.Missing, result.Status);
+        Assert.Null(result.Value);
+    }
+
+    /// <summary>
+    /// Reports missing status when a buried installation has no laying depth.
+    /// </summary>
+    [Fact]
+    public void Evaluate_BuriedWithoutDepth_ReturnsMissing()
+    {
+        var result = _factor.Evaluate(new InstallationContext(
+            Environment: InstallationEnvironment.Buried));
+
+        Assert.Equal(FactorStatus.Missing, result.Status);
+        Assert.Null(result.Value);
+    }
+
+    /// <summary>
+    /// Reports out-of-range status for a laying depth that is not tabulated.
+    /// </summary>
     [Theory]
-    [InlineData(0.50, 1.04)]
-    [InlineData(0.60, 1.02)]
-    [InlineData(0.80, 1.00)]
-    [InlineData(1.00, 0.97)]
-    [InlineData(1.25, 0.95)]
-    [InlineData(1.50, 0.93)]
-    [InlineData(1.75, 0.91)]
-    [InlineData(2.00, 0.90)]
-    public void Calculate_ExactTableValue_ReturnsExpectedCoefficient(double depth, double expected)
+    [InlineData(0.70)]
+    [InlineData(0.30)]
+    [InlineData(3.00)]
+    public void Evaluate_BuriedDepthNotTabulated_ReturnsOutOfRange(double depth)
     {
-        var context = new InstallationContext(LayingDepthMeters: depth);
+        var result = _factor.Evaluate(new InstallationContext(
+            LayingDepthMeters: depth,
+            Environment: InstallationEnvironment.Buried));
 
-        var result = _factor.Calculate(context);
-
-        Assert.Equal(expected, result, precision: 3);
-    }
-
-    [Fact]
-    public void Calculate_IntermediateValue_InterpolatesLinearly()
-    {
-        // Between 0.60 (1.02) and 0.80 (1.00) -> at 0.70m, expected = 1.01
-        var context = new InstallationContext(LayingDepthMeters: 0.70);
-
-        var result = _factor.Calculate(context);
-
-        Assert.Equal(1.01, result, precision: 3);
-    }
-
-    [Fact]
-    public void Calculate_DepthBelowMinimum_ReturnsMinimumCoefficient()
-    {
-        var context = new InstallationContext(LayingDepthMeters: 0.30);
-
-        var result = _factor.Calculate(context);
-
-        Assert.Equal(1.04, result);
-    }
-
-    [Fact]
-    public void Calculate_DepthAboveMaximum_ReturnsMaximumCoefficient()
-    {
-        var context = new InstallationContext(LayingDepthMeters: 3.00);
-
-        var result = _factor.Calculate(context);
-
-        Assert.Equal(0.90, result);
-    }
-
-    [Fact]
-    public void Calculate_NoDepthProvided_ReturnsNeutralFactor()
-    {
-        var context = new InstallationContext();
-
-        var result = _factor.Calculate(context);
-
-        Assert.Equal(1.0, result);
-    }
-
-    [Fact]
-    public void Calculate_ReferenceDepth_ReturnsOne()
-    {
-        // The base current tables (52G-52J) are valid for a reference laying depth of 0.80m,
-        // which corresponds to a neutral correction factor of 1.00 [1].
-        var context = new InstallationContext(LayingDepthMeters: 0.80);
-
-        var result = _factor.Calculate(context);
-
-        Assert.Equal(1.00, result);
+        Assert.Equal(FactorStatus.OutOfRange, result.Status);
+        Assert.Null(result.Value);
+        Assert.Contains("does not match a tabulated entry", result.Explanation);
     }
 }

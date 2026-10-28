@@ -1,14 +1,14 @@
+using HTA.CableSizing.Enums;
 using HTA.CableSizing.Models;
 
 namespace HTA.CableSizing.Factors;
 
-public sealed class K14CorrectionFactor : ICorrectionFactor
+public sealed class K14CorrectionFactor : IResultCorrectionFactor
 {
+    private const string Source = "instruction-metier.md §6.14";
+
     public string Name => "k14";
 
-    // TODO: verify whether the standard explicitly allows linear interpolation
-    // between tabulated values, or imposes another rule (rounding, nearest value...).
-    // This is a default assumption pending confirmation.
     private static readonly (double Depth, double Coefficient)[] Table =
     {
         (0.50, 1.04),
@@ -21,34 +21,36 @@ public sealed class K14CorrectionFactor : ICorrectionFactor
         (2.00, 0.90)
     };
 
-    public double Calculate(InstallationContext context)
+    /// <summary>
+    /// Evaluates the laying-depth
+    /// </summary>
+    public FactorResult Evaluate(InstallationContext context)
     {
+        ArgumentNullException.ThrowIfNull(context);
+
+        if (context.Environment is null)
+        {
+            return new FactorResult(Name, FactorStatus.Missing, null, "The installation environment is required to evaluate k14.", Source);
+        }
+
+        if (context.Environment == InstallationEnvironment.FreeAir)
+        {
+            return new FactorResult(Name, FactorStatus.NotApplicable, 1.0, "K14 does not apply to free-air installations.", Source);
+        }
+
         if (context.LayingDepthMeters is not double depth)
         {
-            return 1.0; // k14 not applicable in this context
+            return new FactorResult(Name, FactorStatus.Missing, null, "The laying depth is required for buried installations.", Source);
         }
 
-        if (depth <= Table[0].Depth)
+        foreach (var (tableDepth, coefficient) in Table)
         {
-            return Table[0].Coefficient;
-        }
-        if (depth >= Table[^1].Depth)
-        {
-            return Table[^1].Coefficient;
-        }
-
-        for (int i = 0; i < Table.Length - 1; i++)
-        {
-            var (d1, c1) = Table[i];
-            var (d2, c2) = Table[i + 1];
-
-            if (depth >= d1 && depth <= d2)
+            if (depth == tableDepth)
             {
-                double ratio = (depth - d1) / (d2 - d1);
-                return c1 + ratio * (c2 - c1);
+                return new FactorResult(Name, FactorStatus.Applied, coefficient, "The laying depth matches a documented table entry.", Source);
             }
         }
 
-        throw new InvalidOperationException("Depth out of range for k14 table.");
+        return new FactorResult(Name, FactorStatus.OutOfRange, null, "The laying depth does not match a tabulated entry.", Source);
     }
 }

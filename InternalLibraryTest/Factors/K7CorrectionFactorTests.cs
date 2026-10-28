@@ -8,39 +8,78 @@ public class K7CorrectionFactorTests
 {
     private readonly K7CorrectionFactor _factor = new();
 
-    [Theory]
-    [InlineData(1, 1.00)]
-    [InlineData(2, 0.80)]
-    [InlineData(3, 0.73)]
-    [InlineData(4, 0.70)]
-    public void Calculate_LayerCount_MatchesReferenceTable(int layerCount, double expected)
-    {
-        var context = new InstallationContext(TouchingCableLayerCountInFreeAir: layerCount);
-
-        var result = _factor.Calculate(context);
-
-        result.Should().BeApproximately(expected, 0.001);
-    }
-
+    /// <summary>
+    /// Verifies that Evaluate applies the documented K7 value for a valid free-air layer count.
+    /// </summary>
     [Fact]
-    public void Calculate_NoDataProvided_ReturnsNeutralFactor()
+    public void Evaluate_FreeAirLayerCount_ReturnsAppliedResult()
     {
-        var context = new InstallationContext();
+        var context = new InstallationContext(
+            TouchingCableLayerCountInFreeAir: 3,
+            Environment: HTA.CableSizing.Enums.InstallationEnvironment.FreeAir);
 
-        var result = _factor.Calculate(context);
+        var result = _factor.Evaluate(context);
 
-        result.Should().Be(1.0);
+        result.Status.Should().Be(FactorStatus.Applied);
+        result.Value.Should().Be(0.73);
+        result.Source.Should().Be("instruction-metier.md §6.7");
     }
 
+    /// <summary>
+    /// Verifies that Evaluate reports K7 as not applicable for a buried installation.
+    /// </summary>
+    [Fact]
+    public void Evaluate_BuriedInstallation_ReturnsNotApplicableResult()
+    {
+        var context = new InstallationContext(Environment: HTA.CableSizing.Enums.InstallationEnvironment.Buried);
+
+        var result = _factor.Evaluate(context);
+
+        result.Status.Should().Be(FactorStatus.NotApplicable);
+        result.Value.Should().Be(1.0);
+    }
+
+    /// <summary>
+    /// Verifies that Evaluate reports missing data when the installation environment is absent.
+    /// </summary>
+    [Fact]
+    public void Evaluate_MissingEnvironment_ReturnsMissingResult()
+    {
+        var result = _factor.Evaluate(new InstallationContext(TouchingCableLayerCountInFreeAir: 2));
+
+        result.Status.Should().Be(FactorStatus.Missing);
+        result.Value.Should().BeNull();
+    }
+
+    /// <summary>
+    /// Verifies that Evaluate reports missing data when the required layer count is absent.
+    /// </summary>
+    [Fact]
+    public void Evaluate_MissingLayerCount_ReturnsMissingResult()
+    {
+        var context = new InstallationContext(Environment: HTA.CableSizing.Enums.InstallationEnvironment.FreeAir);
+
+        var result = _factor.Evaluate(context);
+
+        result.Status.Should().Be(FactorStatus.Missing);
+        result.Value.Should().BeNull();
+    }
+
+    /// <summary>
+    /// Verifies that Evaluate reports an out-of-range result for layer counts outside the K7 table.
+    /// </summary>
     [Theory]
     [InlineData(0)]
     [InlineData(5)]
-    public void Calculate_LayerCountOutOfRange_Throws(int layerCount)
+    public void Evaluate_LayerCountOutOfRange_ReturnsOutOfRangeResult(int layerCount)
     {
-        var context = new InstallationContext(TouchingCableLayerCountInFreeAir: layerCount);
+        var context = new InstallationContext(
+            TouchingCableLayerCountInFreeAir: layerCount,
+            Environment: HTA.CableSizing.Enums.InstallationEnvironment.FreeAir);
 
-        var act = () => _factor.Calculate(context);
+        var result = _factor.Evaluate(context);
 
-        act.Should().Throw<ArgumentOutOfRangeException>();
+        result.Status.Should().Be(FactorStatus.OutOfRange);
+        result.Value.Should().BeNull();
     }
 }

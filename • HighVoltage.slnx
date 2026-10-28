@@ -1,6 +1,5 @@
 <Solution>
   <Project Path="CInterfaceNative/CInterfaceNative.csproj" />
-  <Project Path="ConsoleApp1/ConsoleApp1.csproj" />
   <Project Path="InternalLibrary/HTA.CableSizing.csproj" Id="56db7668-2d26-51a1-4490-0ebb3659c0c1" />
   <Project Path="InternalLibraryTest/HTA.CableSizing.Tests.csproj" Id="9e7e5dfe-8e11-46f6-a252-f73a2251fa7f" />
 </Solution>

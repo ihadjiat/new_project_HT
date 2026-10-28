@@ -1,9 +1,12 @@
 using HTA.CableSizing.Models;
+using HTA.CableSizing.Enums;
 
 namespace HTA.CableSizing.Factors;
 
-public sealed class K8CorrectionFactor : ICorrectionFactor
+public sealed class K8CorrectionFactor : IResultCorrectionFactor
 {
+    private const string Source = "instruction-metier.md §6.8";
+
     public string Name => "k8";
 
     // Key: (number of layers, conduits per layer) -> k8
@@ -17,19 +20,43 @@ public sealed class K8CorrectionFactor : ICorrectionFactor
         { (6, 1), 0.79 }, { (6, 2), 0.75 }, { (6, 3), 0.71 }, { (6, 4), 0.70 }, { (6, 5), 0.69 }, { (6, 6), 0.68 },
     };
 
-    public double Calculate(InstallationContext context)
+    /// <summary>
+    /// Evaluates K8 for touching conduits in free air using the documented layer and conduit counts.
+    /// </summary>
+    public FactorResult Evaluate(InstallationContext context)
     {
-        if (context.TouchingConduitLayerCountInFreeAir is not int layers || context.TouchingConduitsPerLayerInFreeAir is not int conduits)
+        ArgumentNullException.ThrowIfNull(context);
+
+        if (context.Environment is null)
         {
-            return 1.0; // k8 not applicable in this context
+            return new FactorResult(Name, FactorStatus.Missing, null, "The installation environment is required to evaluate K8.", Source);
         }
 
-        var key = (layers, conduits);
+        if (context.Environment == InstallationEnvironment.Buried)
+        {
+            return new FactorResult(Name, FactorStatus.NotApplicable, 1.0, "K8 is not applicable to buried installations.", Source);
+        }
+
+        var layers = context.TouchingConduitLayerCountInFreeAir;
+        var conduitsPerLayer = context.TouchingConduitsPerLayerInFreeAir;
+
+        if ((layers is int layerCount && (layerCount < 1 || layerCount > 6))
+            || (conduitsPerLayer is int conduitCount && (conduitCount < 1 || conduitCount > 6)))
+        {
+            return new FactorResult(Name, FactorStatus.OutOfRange, null, "K8 is tabulated only for 1 to 6 layers and 1 to 6 touching conduits per layer.", Source);
+        }
+
+        if (layers is not int validLayers || conduitsPerLayer is not int validConduitsPerLayer)
+        {
+            return new FactorResult(Name, FactorStatus.Missing, null, "The number of touching conduit layers and conduits per layer in free air are required to evaluate K8.", Source);
+        }
+
+        var key = (validLayers, validConduitsPerLayer);
         if (!Table.TryGetValue(key, out var value))
         {
-            throw new ArgumentOutOfRangeException($"No k8 value for {layers} layer(s) / {conduits} conduit(s) per layer.");
+            return new FactorResult(Name, FactorStatus.OutOfRange, null, "The supplied K8 layer and conduit counts do not have a documented table value.", Source);
         }
-        
-        return value;
+
+        return new FactorResult(Name, FactorStatus.Applied, value, $"K8 is {value:0.00} for {validLayers} layer(s) and {validConduitsPerLayer} touching conduit(s) per layer in free air.", Source);
     }
 }

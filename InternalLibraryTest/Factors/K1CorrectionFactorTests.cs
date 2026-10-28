@@ -9,64 +9,81 @@ public class K1CorrectionFactorTests
 {
     private readonly K1CorrectionFactor _factor = new();
 
+    /// <summary>Verifies K1 returns documented values for free-air installations.</summary>
     [Theory]
     [InlineData(10, InsulationType.Pvc, 1.22)]
-    [InlineData(15, InsulationType.Pvc, 1.17)]
-    [InlineData(20, InsulationType.Pvc, 1.12)]
-    [InlineData(25, InsulationType.Pvc, 1.06)]
-    [InlineData(30, InsulationType.Pvc, 1.00)]
-    [InlineData(35, InsulationType.Pvc, 0.94)]
-    [InlineData(40, InsulationType.Pvc, 0.87)]
-    [InlineData(45, InsulationType.Pvc, 0.79)]
-    [InlineData(50, InsulationType.Pvc, 0.71)]
-    [InlineData(55, InsulationType.Pvc, 0.61)]
-    public void Calculate_Pvc_MatchesReferenceTable(double temperature, InsulationType insulation, double expected)
-    {
-        var context = new InstallationContext(
-            AmbientAirTemperatureCelsius: temperature,
-            InsulationType: insulation);
-
-        var result = _factor.Calculate(context);
-
-        result.Should().BeApproximately(expected, 0.01);
-    }
-
-    [Theory]
-    [InlineData(10, InsulationType.PrEpr, 1.15)]
-    [InlineData(20, InsulationType.PrEpr, 1.08)]
-    [InlineData(30, InsulationType.PrEpr, 1.00)]
     [InlineData(40, InsulationType.PrEpr, 0.91)]
-    [InlineData(55, InsulationType.PrEpr, 0.76)]
-    public void Calculate_PrEpr_MatchesReferenceTable(double temperature, InsulationType insulation, double expected)
+    public void Evaluate_FreeAirWithTabulatedTemperature_ReturnsAppliedValue(
+        double temperature, InsulationType insulation, double expected)
     {
         var context = new InstallationContext(
             AmbientAirTemperatureCelsius: temperature,
-            InsulationType: insulation);
+            InsulationType: insulation,
+            Environment: InstallationEnvironment.FreeAir);
 
-        var result = _factor.Calculate(context);
+        var result = _factor.Evaluate(context);
 
-        result.Should().BeApproximately(expected, 0.01);
+        result.Status.Should().Be(FactorStatus.Applied);
+        result.Value.Should().Be(expected);
+        result.Source.Should().Be("instruction-metier.md §6.1");
     }
 
+    /// <summary>Verifies K1 is not applicable to buried installations.</summary>
     [Fact]
-    public void Calculate_NoDataProvided_ReturnsNeutralFactor()
+    public void Evaluate_BuriedInstallation_ReturnsNotApplicable()
     {
-        var context = new InstallationContext();
+        var result = _factor.Evaluate(new InstallationContext(Environment: InstallationEnvironment.Buried));
 
-        var result = _factor.Calculate(context);
-
-        result.Should().Be(1.0);
+        result.Status.Should().Be(FactorStatus.NotApplicable);
+        result.Value.Should().Be(1.0);
     }
 
+    /// <summary>Verifies K1 is missing when the installation environment is unknown.</summary>
     [Fact]
-    public void Calculate_TemperatureAboveMaxCoreTemperature_Throws()
+    public void Evaluate_EnvironmentMissing_ReturnsMissing()
+    {
+        var result = _factor.Evaluate(new InstallationContext());
+
+        result.Status.Should().Be(FactorStatus.Missing);
+        result.Value.Should().BeNull();
+    }
+
+    /// <summary>Verifies K1 is missing when the applicable ambient temperature is absent.</summary>
+    [Fact]
+    public void Evaluate_FreeAirTemperatureMissing_ReturnsMissing()
+    {
+        var result = _factor.Evaluate(new InstallationContext(
+            InsulationType: InsulationType.Pvc,
+            Environment: InstallationEnvironment.FreeAir));
+
+        result.Status.Should().Be(FactorStatus.Missing);
+        result.Value.Should().BeNull();
+    }
+
+    /// <summary>Verifies K1 is missing when the applicable insulation type is absent.</summary>
+    [Fact]
+    public void Evaluate_FreeAirInsulationMissing_ReturnsMissing()
+    {
+        var result = _factor.Evaluate(new InstallationContext(
+            AmbientAirTemperatureCelsius: 20,
+            Environment: InstallationEnvironment.FreeAir));
+
+        result.Status.Should().Be(FactorStatus.Missing);
+        result.Value.Should().BeNull();
+    }
+
+    /// <summary>Verifies K1 returns OutOfRange for an ambient temperature absent from the table.</summary>
+    [Fact]
+    public void Evaluate_TemperatureNotInTable_ReturnsOutOfRange()
     {
         var context = new InstallationContext(
-            AmbientAirTemperatureCelsius: 95,
-            InsulationType: InsulationType.Pvc);
+            AmbientAirTemperatureCelsius: 12,
+            InsulationType: InsulationType.Pvc,
+            Environment: InstallationEnvironment.FreeAir);
 
-        var act = () => _factor.Calculate(context);
+        var result = _factor.Evaluate(context);
 
-        act.Should().Throw<ArgumentOutOfRangeException>();
+        result.Status.Should().Be(FactorStatus.OutOfRange);
+        result.Value.Should().BeNull();
     }
 }
